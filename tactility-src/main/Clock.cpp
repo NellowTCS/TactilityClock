@@ -1,26 +1,20 @@
-#define LV_USE_PRIVATE_API 1
+// #define LV_USE_PRIVATE_API 1
 
-#include <Tactility/app/App.h>
-#include <Tactility/app/AppManifest.h>
-#include <Tactility/app/AppContext.h>
-#include <Tactility/settings/Time.h>
-#include <Tactility/Preferences.h>
+#include <tt_time.h>
+#include <tt_app.h>
+#include <tt_preferences.h>
+#include <tt_lvgl_toolbar.h>
+#include <tt_lvgl.h>
+#include <esp_log.h>
+
 #include <lvgl.h>
 #include <ctime>
 #include <cmath>
 #include <chrono>
-
-#ifdef ESP_PLATFORM
-#include "Tactility/Timer.h"
-#include "Tactility/lvgl/LvglSync.h"
 #include "esp_sntp.h"
-#endif
 
-#include <Tactility/lvgl/Toolbar.h>
 
-using namespace tt::app;
-
-namespace tt::app::clock {
+constexpr auto* TAG = "ClockApp";
 
 class ClockApp : public App {
 private:
@@ -70,24 +64,24 @@ private:
     }
 
     static void wifi_connect_cb(lv_event_t* e) {
-        tt::app::start("WifiManage");
+        app::start("WifiManage");
     }
 
     void load_mode() {
-        tt::Preferences prefs("clock_settings");
+        Preferences prefs("clock_settings");
         is_analog = false;
         prefs.optBool("is_analog", is_analog);
     }
 
     void save_mode() {
-        tt::Preferences prefs("clock_settings");
+        Preferences prefs("clock_settings");
         prefs.putBool("is_analog", is_analog);
     }
 
     void toggle_mode() {
         is_analog = !is_analog;
         save_mode();
-        TT_LOG_I("Clock", "Toggling mode to: %s", is_analog ? "analog" : "digital");
+        ESP_LOGI("Clock", "Toggling mode to: %s", is_analog ? "analog" : "digital");
         redraw_clock();
         // Force immediate screen update
         lv_refr_now(NULL);
@@ -102,7 +96,7 @@ private:
         // Use FreeRTOS ticks instead of chrono (50ms = 50 ticks at 1000Hz)
         auto lock = lvgl::getSyncLock()->asScopedLock();
         if (!lock.lock(pdMS_TO_TICKS(50))) {
-            TT_LOG_W("Clock", "LVGL lock timeout in update_time_and_check_sync - skipping update");
+            ESP_LOGW("Clock", "LVGL lock timeout in update_time_and_check_sync - skipping update");
             return; // Skip this update cycle rather than hang
         }
 
@@ -211,8 +205,6 @@ private:
             }
         }
     }
-
-    // (Removed: animate_hand, not needed for lv_line hands)
 
     void get_display_metrics(lv_coord_t* width, lv_coord_t* height, bool* is_small) {
         *width = lv_obj_get_width(clock_container);
@@ -433,7 +425,7 @@ private:
 #ifdef ESP_PLATFORM
         auto lock = lvgl::getSyncLock()->asScopedLock();
         if (!lock.lock(lvgl::defaultLockTime)) {
-            TT_LOG_E("Clock", "LVGL lock failed in redraw_clock");
+            ESP_LOGE("Clock", "LVGL lock failed in redraw_clock");
             return;
         }
 #endif
@@ -483,7 +475,7 @@ private:
     }
 
 public:
-    void onShow(AppContext& app_context, lv_obj_t* parent) override {
+    void onShow(AppContext& app_context, lv_obj_t* parent) {
         context = &app_context;
         
         // Create toolbar
@@ -527,7 +519,7 @@ public:
         auto wrapper = std::make_shared<AppWrapper>(this);
         timer = std::make_unique<Timer>(Timer::Type::Periodic, [wrapper]() { timer_callback(wrapper); });
         timer->start(1000);
-        TT_LOG_I("Clock", "Timer started in onShow");
+        ESP_LOGI("Clock", "Timer started in onShow");
 #endif
 #ifndef ESP_PLATFORM
         update_timer = lv_timer_create([](lv_timer_t* timer) {
@@ -537,12 +529,12 @@ public:
 #endif
     }
 
-    void onHide(AppContext& app_context) override {
+    void onHide(AppContext& app_context) {
 #ifdef ESP_PLATFORM
         // Stop timer first to prevent any callbacks during cleanup
         if (timer) {
             timer->stop();
-            TT_LOG_I("Clock", "Timer stopped in onHide");
+            ESP_LOGI("Clock", "Timer stopped in onHide");
         }
         
         // Clear object pointers to prevent stale access
@@ -564,10 +556,12 @@ public:
     }
 };
 
-AppManifest clock_manifest = {
-    .appId = "Clock",
-    .appName = "Clock",
-    .createApp = create<ClockApp>
+ExternalAppManifest manifest = {
+    .onShow = ClockApp.onShow,
+    .onHide = ClockApp.onHide,
+
 };
 
-} // namespace tt::app::clock
+extern "C" void app_main(void) {
+    tt_app_register(&manifest);
+}

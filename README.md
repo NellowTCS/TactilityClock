@@ -1,2 +1,3 @@
 # TactilityClock
-An external app for Tactility; a clock.
+
+An external clock app for Tactility.
