@@ -25,14 +25,14 @@ runs:
       with:
         esp_idf_version: v5.5
         path: ./tactility-src
-        command: export TACTILITY_SDK_PATH=./.tactility && python tactility.py build --no-animations --local-sdk
+        command: export TACTILITY_SDK_PATH=./.tactility && python tactility.py build--local-sdk
     - name: 'Build with Default SDK'
       if: inputs.use_custom_sdk != 'true'
       uses: espressif/esp-idf-ci-action@v1
       with:
         esp_idf_version: v5.5
         path: ./tactility-src
-        command: 'python tactility.py build --no-animations'
+        command: 'python tactility.py build'
     - name: 'Upload Artifact'
       if: inputs.upload_artifact == 'true'
       uses: actions/upload-artifact@v4
