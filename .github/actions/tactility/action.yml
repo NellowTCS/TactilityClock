@@ -25,7 +25,7 @@ runs:
       with:
         esp_idf_version: v5.5
         path: ./tactility-src
-        command: export TACTILITY_SDK_PATH=./.tactility && python tactility.py build--local-sdk
+        command: export TACTILITY_SDK_PATH=./.tactility && python tactility.py build --local-sdk
     - name: 'Build with Default SDK'
       if: inputs.use_custom_sdk != 'true'
       uses: espressif/esp-idf-ci-action@v1
