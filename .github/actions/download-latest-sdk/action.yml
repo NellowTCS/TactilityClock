@@ -32,7 +32,7 @@ runs:
             temp_zip=$(mktemp)
             curl -L -H "Authorization: token ${{ inputs.github-token }}" -o "$temp_zip" "$download_url"
 
-            target_dir="tactility-src/.tactility/0.6.0-SNAPSHOT10-${platform}/TactilitySDK"
+            target_dir="tactility-src/.tactility/0.6.0-SNAPSHOT12-${platform}/TactilitySDK"
             mkdir -p "$target_dir"
 
             # Extract into temporary dir

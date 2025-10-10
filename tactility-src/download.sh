@@ -6,7 +6,7 @@ GITHUB_TOKEN="${GITHUB_TOKEN:?Need to set GITHUB_TOKEN env var}"
 REPO="NellowTCS/Tactility"
 WORKFLOW_FILE="build-sdk.yml"
 DEST_BASE=".tactility"
-SDK_VERSION="0.6.0-SNAPSHOT10"
+SDK_VERSION="0.6.0-SNAPSHOT12"
 PLATFORMS=("esp32" "esp32s3")
 
 # Step 1: Get latest successful workflow run
