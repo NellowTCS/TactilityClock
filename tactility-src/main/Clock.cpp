@@ -1,19 +1,20 @@
 // #define LV_USE_PRIVATE_API 1
 
+#include <lvgl.h>
+
 #include <tt_app.h>
+#include <tt_kernel.h>
 #include <tt_lvgl.h>
 #include <tt_lvgl_toolbar.h>
-#include <tt_mutex.h>
+#include <tt_lock.h>
 #include <tt_preferences.h>
 #include <tt_time.h>
 #include <tt_timer.h>
 
-#include <lvgl.h>
 #include <esp_log.h>
 #include "esp_sntp.h"
 #include <cmath>
 #include <time.h>
-#include <lvgl.h>
 
 constexpr auto *TAG = "ClockApp";
 
@@ -37,7 +38,7 @@ static TimerHandle_t timer_handle; // Changed from std::unique_ptr<Timer>
 static bool last_sync_status; // Track previous sync status to detect changes
 static bool is_analog;
 static AppHandle app_handle; // Changed from AppContext*
-static MutexHandle lvgl_mutex; // Mutex for LVGL operations
+static LockHandle lvgl_mutex; // Mutex for LVGL operations
 
 struct AppWrapper {
   void *app; // Placeholder, since no class now
@@ -84,9 +85,9 @@ static void toggle_mode() {
   ESP_LOGI("Clock", "Toggling mode to: %s", is_analog ? "analog" : "digital");
   redraw_clock();
   // Force immediate screen update
-  if (tt_mutex_lock(lvgl_mutex, pdMS_TO_TICKS(10))) {
+  if (tt_lock_acquire(lvgl_mutex, pdMS_TO_TICKS(10))) {
     lv_refr_now(NULL);
-    tt_mutex_unlock(lvgl_mutex);
+    tt_lock_release(lvgl_mutex);
   }
 }
 
@@ -96,7 +97,7 @@ static bool is_time_synced() {
 
 static void update_time_and_check_sync() {
   // Lock LVGL mutex to protect UI operations
-  if (!tt_mutex_lock(lvgl_mutex, pdMS_TO_TICKS(50))) {
+  if (!tt_lock_acquire(lvgl_mutex, pdMS_TO_TICKS(50))) {
     ESP_LOGW("Clock", "LVGL lock timeout in update_time_and_check_sync - skipping update");
     return;
   }
@@ -115,13 +116,13 @@ static void update_time_and_check_sync() {
     if (wifi_label && lv_obj_is_valid(wifi_label)) {
       lv_label_set_text(wifi_label, "No Wi-Fi - Time not synced");
     }
-    tt_mutex_unlock(lvgl_mutex);
+    tt_lock_release(lvgl_mutex);
     return;
   }
 
   // Update the actual time display
   update_time_display();
-  tt_mutex_unlock(lvgl_mutex);
+  tt_lock_release(lvgl_mutex);
 }
 
 static void update_time_display() {
@@ -442,7 +443,7 @@ static void create_digital_clock() {
 
 static void redraw_clock() {
   // Lock LVGL mutex to protect UI operations
-  if (!tt_mutex_lock(lvgl_mutex, pdMS_TO_TICKS(100))) {
+  if (!tt_lock_acquire(lvgl_mutex, pdMS_TO_TICKS(100))) {
     ESP_LOGE("Clock", "LVGL lock failed in redraw_clock");
     return;
   }
@@ -485,7 +486,7 @@ static void redraw_clock() {
     lv_obj_invalidate(time_label);
   }
 
-  tt_mutex_unlock(lvgl_mutex);
+  tt_lock_release(lvgl_mutex);
 }
 
 // C callback functions
@@ -523,7 +524,7 @@ lv_obj_add_event_cb(toggle_btn, toggle_mode_cb, LV_EVENT_CLICKED, app_handle);  
   last_sync_status = is_time_synced();
 
   // Initialize LVGL mutex
-  lvgl_mutex = tt_mutex_alloc(MUTEX_TYPE_RECURSIVE);
+  lvgl_mutex = tt_lock_alloc_mutex(MutexTypeRecursive);
 
   redraw_clock();
 
@@ -545,7 +546,7 @@ extern "C" void onHide(void *app, void *data) {
 
   // Clean up LVGL mutex
   if (lvgl_mutex) {
-    tt_mutex_free(lvgl_mutex);
+    tt_lock_free(lvgl_mutex);
     lvgl_mutex = nullptr;
   }
 
