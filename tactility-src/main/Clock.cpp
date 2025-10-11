@@ -269,7 +269,7 @@ static void create_wifi_prompt() {
   lv_label_set_text(btn_label, "Connect to Wi-Fi");
   lv_obj_center(btn_label);
   lv_obj_set_style_text_font(btn_label, lv_font_get_default(), 0);
-  lv_obj_set_style_text_color(btn_label, lv_color_make(255,255,255), 0);
+  lv_obj_set_style_text_color(btn_label, lv_color_hex(0xFFFFFF), 0);
 
   lv_obj_add_event_cb(wifi_button, wifi_connect_cb, LV_EVENT_CLICKED,
                       app_handle);
@@ -289,7 +289,7 @@ static void create_analog_clock() {
   lv_obj_set_size(clock_face, clock_size, clock_size);
   lv_obj_center(clock_face);
   lv_obj_set_style_radius(clock_face, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(clock_face, lv_color_make(255,255,255), 0);
+  lv_obj_set_style_bg_color(clock_face, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_bg_opa(clock_face, LV_OPA_10, 0);
   lv_obj_set_style_border_width(clock_face, is_small ? 2 : 3, 0);
   lv_obj_set_style_border_color(clock_face, lv_palette_main(LV_PALETTE_GREY),
@@ -338,7 +338,7 @@ static void create_analog_clock() {
   hour_hand = lv_line_create(clock_face);
   lv_line_set_points_mutable(hour_hand, hour_points, 2);
   lv_obj_set_style_line_width(hour_hand, is_small ? 4 : 6, 0);
-  lv_obj_set_style_line_color(hour_hand, lv_color_make(255,255,255), 0);
+  lv_obj_set_style_line_color(hour_hand, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_line_opa(hour_hand, LV_OPA_COVER, 0);
   lv_obj_set_style_line_rounded(hour_hand, true, 0);
 
@@ -349,7 +349,7 @@ static void create_analog_clock() {
   minute_hand = lv_line_create(clock_face);
   lv_line_set_points_mutable(minute_hand, minute_points, 2);
   lv_obj_set_style_line_width(minute_hand, is_small ? 3 : 4, 0);
-  lv_obj_set_style_line_color(minute_hand, lv_color_make(255,255,255), 0);
+  lv_obj_set_style_line_color(minute_hand, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_line_opa(minute_hand, LV_OPA_COVER, 0);
   lv_obj_set_style_line_rounded(minute_hand, true, 0);
 
@@ -369,7 +369,7 @@ static void create_analog_clock() {
   lv_obj_set_size(center, is_small ? 8 : 12, is_small ? 8 : 12);
   lv_obj_center(center);
   lv_obj_set_style_radius(center, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(center, lv_color_make(255,255,255), 0);
+  lv_obj_set_style_bg_color(center, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_border_width(center, 0, 0);
 
   // Date label - position below center to avoid hand overlap
@@ -405,8 +405,8 @@ static void create_digital_clock() {
   lv_obj_set_style_text_font(time_label, time_font, 0);
 
   // Enhanced styling with borders and better contrast
-  lv_obj_set_style_text_color(time_label, lv_color_make(255,255,255), 0);
-  lv_obj_set_style_bg_color(time_label, lv_color_black(), 0);
+  lv_obj_set_style_text_color(time_label, lv_color_hex(0xFFFFFF), 0);
+  lv_obj_set_style_bg_color(time_label, lv_color_hex(0x000000), 0);
   lv_obj_set_style_bg_opa(time_label, LV_OPA_30, 0);
   lv_obj_set_style_radius(time_label, is_small ? 12 : 16, 0);
   lv_obj_set_style_pad_all(time_label, is_small ? 20 : 28, 0);
@@ -467,7 +467,7 @@ static void redraw_clock() {
     create_digital_clock();
   }
 
-  // Force complete redraw with multiple invalidation strategies
+  // Force complete redraw
   lv_obj_invalidate(clock_container);
   lv_obj_t *parent = lv_obj_get_parent(clock_container);
   if (parent) {
