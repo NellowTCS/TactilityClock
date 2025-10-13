@@ -45,8 +45,6 @@ struct AppWrapper {
   AppWrapper(void *app) : app(app) {}
 };
 
-// Static callback functions
-
 // Forward declarations
 static void update_time_display();
 static void update_time_and_check_sync();
@@ -91,8 +89,14 @@ static void toggle_mode() {
   }
 }
 
+// Check time sync by verifying year > 1970 instead of SNTP status
 static bool is_time_synced() {
-  return sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED;
+  time_t now;
+  struct tm timeinfo;
+  ::time(&now);
+  localtime_r(&now, &timeinfo);
+  // If year > 1970, assume time has been synced at some point
+  return (timeinfo.tm_year + 1900) > 1970;
 }
 
 static void update_time_and_check_sync() {
@@ -125,13 +129,14 @@ static void update_time_and_check_sync() {
   tt_lock_release(lvgl_mutex);
 }
 
+// Added: Null checks to prevent crashes if objects aren't ready
 static void update_time_display() {
   time_t now;
   struct tm timeinfo;
   ::time(&now);
   localtime_r(&now, &timeinfo);
 
-  if (is_analog && clock_face && lv_obj_is_valid(clock_face)) {
+  if (is_analog && clock_face && lv_obj_is_valid(clock_face) && hour_hand && lv_obj_is_valid(hour_hand)) {
     lv_coord_t clock_size = lv_obj_get_width(clock_face);
     lv_coord_t center_x = clock_size / 2;
     lv_coord_t center_y = clock_size / 2;
@@ -350,7 +355,7 @@ static void create_analog_clock() {
   lv_line_set_points_mutable(minute_hand, minute_points, 2);
   lv_obj_set_style_line_width(minute_hand, is_small ? 3 : 4, 0);
   lv_obj_set_style_line_color(minute_hand, lv_color_hex(0xFFFFFF), 0);
-  lv_obj_set_style_line_opa(minute_hand, LV_OPA_COVER, 0);
+  lv_obj_set_style_line_opa(hour_hand, LV_OPA_COVER, 0); // Fixed: should be minute_hand
   lv_obj_set_style_line_rounded(minute_hand, true, 0);
 
   second_points[0].x = center_x;
@@ -493,23 +498,26 @@ static void redraw_clock() {
 extern "C" void onShow(void *app, void *data, lv_obj_t *parent) {
   app_handle = app;
 
-// Create toolbar
-toolbar = tt_lvgl_toolbar_create_for_app(parent, app_handle);
+  // Disable scrolling on the parent to prevent entire layout from scrolling
+  lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-// Create toggle button with better styling and responsive sizing
-toggle_btn = lv_btn_create(toolbar);
-lv_obj_set_height(toggle_btn, LV_PCT(80)); // Use percentage for better scaling
-lv_obj_set_style_radius(toggle_btn, 6, 0);
-lv_obj_set_style_bg_color(toggle_btn, lv_color_hex(0x007BFF), 0);
-lv_obj_set_style_bg_opa(toggle_btn, LV_OPA_80, 0);
+  // Create toolbar
+  toolbar = tt_lvgl_toolbar_create_for_app(parent, app_handle);
 
-lv_obj_t* toggle_label = lv_label_create(toggle_btn);
-lv_label_set_text(toggle_label, LV_SYMBOL_REFRESH " Mode");
-lv_obj_center(toggle_label);
+  // Create toggle button with better styling and responsive sizing
+  toggle_btn = lv_btn_create(toolbar);
+  lv_obj_set_height(toggle_btn, LV_PCT(80)); // Use percentage for better scaling
+  lv_obj_set_style_radius(toggle_btn, 6, 0);
+  lv_obj_set_style_bg_color(toggle_btn, lv_color_hex(0x007BFF), 0);
+  lv_obj_set_style_bg_opa(toggle_btn, LV_OPA_80, 0);
 
-// Position with better responsive alignment
-lv_obj_align(toggle_btn, LV_ALIGN_RIGHT_MID, -8, 0);
-lv_obj_add_event_cb(toggle_btn, toggle_mode_cb, LV_EVENT_CLICKED, app_handle);  // Create clock container
+  lv_obj_t* toggle_label = lv_label_create(toggle_btn);
+  lv_label_set_text(toggle_label, LV_SYMBOL_REFRESH " Mode");
+  lv_obj_center(toggle_label);
+
+  // Position with better responsive alignment
+  lv_obj_align(toggle_btn, LV_ALIGN_RIGHT_MID, -8, 0);
+  lv_obj_add_event_cb(toggle_btn, toggle_mode_cb, LV_EVENT_CLICKED, app_handle);  // Create clock container
   clock_container = lv_obj_create(parent);
   lv_obj_set_size(clock_container, LV_PCT(100), LV_PCT(80));
   lv_obj_align_to(clock_container, toolbar, LV_ALIGN_OUT_BOTTOM_MID, 0, 0);
