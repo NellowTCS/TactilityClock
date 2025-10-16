@@ -228,8 +228,10 @@ static void create_wifi_prompt() {
   // Create a card-style container for the WiFi prompt
   lv_obj_t *card = lv_obj_create(clock_container);
   lv_obj_set_size(card, LV_PCT(90), LV_SIZE_CONTENT);
-  lv_obj_center(card);
   lv_obj_set_style_radius(card, is_small ? 8 : 16, 0);
+  lv_obj_set_layout(card, LV_LAYOUT_FLEX);
+  lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_bg_color(card, lv_color_hex(0x333333), 0);
   lv_obj_set_style_bg_opa(card, LV_OPA_10, 0);
   lv_obj_set_style_border_width(card, 1, 0);
