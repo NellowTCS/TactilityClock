@@ -355,7 +355,7 @@ static void create_analog_clock() {
   lv_line_set_points_mutable(minute_hand, minute_points, 2);
   lv_obj_set_style_line_width(minute_hand, is_small ? 3 : 4, 0);
   lv_obj_set_style_line_color(minute_hand, lv_color_hex(0xFFFFFF), 0);
-  lv_obj_set_style_line_opa(hour_hand, LV_OPA_COVER, 0); // Fixed: should be minute_hand
+  lv_obj_set_style_line_opa(minute_hand, LV_OPA_COVER, 0);
   lv_obj_set_style_line_rounded(minute_hand, true, 0);
 
   second_points[0].x = center_x;
@@ -498,11 +498,9 @@ static void redraw_clock() {
 extern "C" void onShow(void *app, void *data, lv_obj_t *parent) {
   app_handle = app;
 
-  // Disable scrolling on the parent to prevent entire layout from scrolling
-  lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
-
-  // Create toolbar
+  // Create toolbar aligned to top
   toolbar = tt_lvgl_toolbar_create_for_app(parent, app_handle);
+  lv_obj_align(toolbar, LV_ALIGN_TOP_LEFT, 0, 0);
 
   // Create toggle button with better styling and responsive sizing
   toggle_btn = lv_btn_create(toolbar);
@@ -517,14 +515,19 @@ extern "C" void onShow(void *app, void *data, lv_obj_t *parent) {
 
   // Position with better responsive alignment
   lv_obj_align(toggle_btn, LV_ALIGN_RIGHT_MID, -8, 0);
-  lv_obj_add_event_cb(toggle_btn, toggle_mode_cb, LV_EVENT_CLICKED, app_handle);  // Create clock container
+  lv_obj_add_event_cb(toggle_btn, toggle_mode_cb, LV_EVENT_CLICKED, app_handle);
+
+  // Create flex container that fills space below toolbar
   clock_container = lv_obj_create(parent);
-  lv_obj_set_size(clock_container, LV_PCT(100), LV_PCT(80));
-  lv_obj_align_to(clock_container, toolbar, LV_ALIGN_OUT_BOTTOM_MID, 0, 0);
+  lv_obj_set_size(clock_container, LV_PCT(100), LV_PCT(100));
+  lv_obj_align_to(clock_container, toolbar, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
   lv_obj_set_style_border_width(clock_container, 0, 0);
   lv_obj_set_style_pad_all(clock_container, 10, 0);
-  lv_obj_clear_flag(clock_container,
-                    LV_OBJ_FLAG_SCROLLABLE); // Prevent scrolling
+  
+  // Set up flex layout
+  lv_obj_set_layout(clock_container, LV_LAYOUT_FLEX);
+  lv_obj_set_flex_flow(clock_container, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(clock_container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
   // Load settings and initialize
   load_mode();
