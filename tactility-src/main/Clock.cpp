@@ -18,6 +18,15 @@
 
 constexpr auto *TAG = "ClockApp";
 
+// Helper to get toolbar height based on UI scale
+static int getToolbarHeight(hal::UiScale uiScale) {
+    if (uiScale == hal::UiScale::Smallest) {
+        return 22;
+    } else {
+        return 40;
+    }
+}
+
 // Global state variables
 static lv_obj_t *toolbar;
 static lv_obj_t *clock_container;
@@ -238,6 +247,7 @@ static void create_wifi_prompt() {
   lv_obj_set_style_border_color(card, lv_color_hex(0x666666), 0);
   lv_obj_set_style_border_opa(card, LV_OPA_30, 0);
   lv_obj_set_style_pad_all(card, is_small ? 12 : 20, 0);
+  lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
   // WiFi icon (using symbols)
   lv_obj_t *icon = lv_label_create(card);
@@ -519,18 +529,6 @@ extern "C" void onShow(void *app, void *data, lv_obj_t *parent) {
   lv_obj_align(toggle_btn, LV_ALIGN_RIGHT_MID, -8, 0);
   lv_obj_add_event_cb(toggle_btn, toggle_mode_cb, LV_EVENT_CLICKED, app_handle);
 
-  // Create flex container that fills space below toolbar
-  clock_container = lv_obj_create(parent);
-  lv_obj_set_size(clock_container, LV_PCT(100), LV_PCT(100));
-  lv_obj_align_to(clock_container, toolbar, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
-  lv_obj_set_style_border_width(clock_container, 0, 0);
-  lv_obj_set_style_pad_all(clock_container, 10, 0);
-  
-  // Set up flex layout
-  lv_obj_set_layout(clock_container, LV_LAYOUT_FLEX);
-  lv_obj_set_flex_flow(clock_container, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_flex_align(clock_container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
   // Load settings and initialize
   load_mode();
 
@@ -538,6 +536,33 @@ extern "C" void onShow(void *app, void *data, lv_obj_t *parent) {
 
   // Initialize LVGL mutex
   lvgl_mutex = tt_lock_alloc_mutex(MutexTypeRecursive);
+
+  // Get UI scale to determine toolbar height
+  hal::UiScale uiScale = hal::getDefaultUiScale();
+  int toolbar_height = getToolbarHeight(uiScale);
+
+  // Create flex container that fills remaining space below toolbar
+  clock_container = lv_obj_create(parent);
+  
+  // Get parent dimensions
+  lv_coord_t parent_width = lv_obj_get_width(parent);
+  lv_coord_t parent_height = lv_obj_get_height(parent);
+  
+  // Calculate container size: full width, and height minus toolbar
+  lv_coord_t container_height = parent_height - toolbar_height;
+  
+  lv_obj_set_size(clock_container, parent_width, container_height);
+  lv_obj_align_to(clock_container, toolbar, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
+  lv_obj_set_style_border_width(clock_container, 0, 0);
+  lv_obj_set_style_pad_all(clock_container, 10, 0);
+  
+  // Disable scrolling on the container itself
+  lv_obj_clear_flag(clock_container, LV_OBJ_FLAG_SCROLLABLE);
+  
+  // Set up flex layout
+  lv_obj_set_layout(clock_container, LV_LAYOUT_FLEX);
+  lv_obj_set_flex_flow(clock_container, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(clock_container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
   redraw_clock();
 
