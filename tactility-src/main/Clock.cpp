@@ -2,6 +2,7 @@
 
 #include <lvgl.h>
 
+#include <tt_hal.h>
 #include <tt_app.h>
 #include <tt_kernel.h>
 #include <tt_lvgl.h>
@@ -19,8 +20,8 @@
 constexpr auto *TAG = "ClockApp";
 
 // Helper to get toolbar height based on UI scale
-static int getToolbarHeight(hal::UiScale uiScale) {
-    if (uiScale == hal::UiScale::Smallest) {
+static int getToolbarHeight(UiScale uiScale) {
+    if (uiScale == UiScaleSmallest) {
         return 22;
     } else {
         return 40;
@@ -536,11 +537,11 @@ extern "C" void onShow(void *app, void *data, lv_obj_t *parent) {
 
   // Initialize LVGL mutex
   lvgl_mutex = tt_lock_alloc_mutex(MutexTypeRecursive);
-
+  
   // Get UI scale to determine toolbar height
-  hal::UiScale uiScale = hal::getDefaultUiScale();
+  UiScale uiScale = tt_hal_configuration_get_ui_scale();
   int toolbar_height = getToolbarHeight(uiScale);
-
+  
   // Create flex container that fills remaining space below toolbar
   clock_container = lv_obj_create(parent);
   
