@@ -532,7 +532,7 @@ extern "C" void onShow(void *app, void *data, lv_obj_t *parent) {
 extern "C" void onHide(void *app, void *data) {
   // Stop timers first
   if (update_timer) {
-    lv_timer_del(update_timer);
+    lv_timer_delete(update_timer);
     update_timer = nullptr;
   }
   
