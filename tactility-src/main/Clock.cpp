@@ -44,31 +44,40 @@ static lv_obj_t *wifi_label;
 static lv_obj_t *wifi_button;
 static lv_obj_t *toggle_btn;
 static lv_obj_t *date_label;
-static TimerHandle_t timer_handle; // Changed from std::unique_ptr<Timer>
-static bool last_sync_status; // Track previous sync status to detect changes
+static TimerHandle_t sync_check_timer = nullptr;
+static bool last_sync_status;
 static bool is_analog;
-static AppHandle app_handle; // Changed from AppContext*
-static LockHandle lvgl_mutex; // Mutex for LVGL operations
+static AppHandle app_handle;
+static LockHandle lvgl_mutex;
+static bool needs_redraw = false; // Flag for deferred redraws
 
 struct AppWrapper {
-  void *app; // Placeholder, since no class now
+  void *app;
   AppWrapper(void *app) : app(app) {}
 };
 
 // Forward declarations
 static void update_time_display();
-static void update_time_and_check_sync();
+static void check_sync_status();
 static void toggle_mode();
 static void redraw_clock();
 
 // Static callback functions
-static void update_timer_cb(lv_timer_t *timer) { update_time_display(); }
+static void update_timer_cb(lv_timer_t *timer) { 
+  update_time_display(); 
+}
 
-static void timer_callback(void *context) { update_time_and_check_sync(); }
+static void sync_check_callback(void *context) { 
+  check_sync_status(); 
+}
 
-static void toggle_mode_cb(lv_event_t *e) { toggle_mode(); }
+static void toggle_mode_cb(lv_event_t *e) { 
+  toggle_mode(); 
+}
 
-static void wifi_connect_cb(lv_event_t *e) { tt_app_start("WifiManage"); }
+static void wifi_connect_cb(lv_event_t *e) { 
+  tt_app_start("WifiManage"); 
+}
 
 static void load_mode() {
   PreferencesHandle prefs = tt_preferences_alloc("clock_settings");
@@ -92,61 +101,55 @@ static void toggle_mode() {
   save_mode();
   ESP_LOGI("Clock", "Toggling mode to: %s", is_analog ? "analog" : "digital");
   redraw_clock();
-  // Force immediate screen update
-  if (tt_lock_acquire(lvgl_mutex, pdMS_TO_TICKS(10))) {
-    lv_refr_now(NULL);
-    tt_lock_release(lvgl_mutex);
-  }
 }
 
-// Check time sync by verifying year > 1970 instead of SNTP status
+// Check time sync by verifying year > 1970
 static bool is_time_synced() {
   time_t now;
   struct tm timeinfo;
   ::time(&now);
   localtime_r(&now, &timeinfo);
-  // If year > 1970, assume time has been synced at some point
   return (timeinfo.tm_year + 1900) > 1970;
 }
 
-static void update_time_and_check_sync() {
-  // Lock LVGL mutex to protect UI operations
-  if (!tt_lock_acquire(lvgl_mutex, pdMS_TO_TICKS(50))) {
-    ESP_LOGW("Clock", "LVGL lock timeout in update_time_and_check_sync - skipping update");
-    return;
-  }
-
+// Lightweight sync status check (called from FreeRTOS timer)
+static void check_sync_status() {
   bool current_sync_status = is_time_synced();
 
-  // If sync status changed, redraw the entire clock
+  // If sync status changed, flag for redraw
   if (current_sync_status != last_sync_status) {
     last_sync_status = current_sync_status;
-    redraw_clock();
-    return;
+    needs_redraw = true;
   }
-
-  // If not synced, just update the wifi label
-  if (!current_sync_status) {
-    if (wifi_label && lv_obj_is_valid(wifi_label)) {
-      lv_label_set_text(wifi_label, "No Wi-Fi - Time not synced");
-    }
-    tt_lock_release(lvgl_mutex);
-    return;
-  }
-
-  // Update the actual time display
-  update_time_display();
-  tt_lock_release(lvgl_mutex);
 }
 
-// Added: Null checks to prevent crashes if objects aren't ready
+// Deferred redraw check (called from LVGL timer)
+static void check_and_redraw() {
+  if (needs_redraw) {
+    needs_redraw = false;
+    redraw_clock();
+  }
+}
+
+// Update time display
 static void update_time_display() {
+  // First check if we need to redraw due to sync status change
+  check_and_redraw();
+
   time_t now;
   struct tm timeinfo;
   ::time(&now);
   localtime_r(&now, &timeinfo);
 
-  if (is_analog && clock_face && lv_obj_is_valid(clock_face) && hour_hand && lv_obj_is_valid(hour_hand)) {
+  // If not synced, update wifi label
+  if (!is_time_synced()) {
+    if (wifi_label && lv_obj_is_valid(wifi_label)) {
+      lv_label_set_text(wifi_label, "No Wi-Fi - Time not synced");
+    }
+    return;
+  }
+
+  if (is_analog && clock_face && lv_obj_is_valid(clock_face)) {
     lv_coord_t clock_size = lv_obj_get_width(clock_face);
     lv_coord_t center_x = clock_size / 2;
     lv_coord_t center_y = clock_size / 2;
@@ -162,37 +165,28 @@ static void update_time_display() {
     float second_angle = timeinfo.tm_sec * 6.0f - 90;
 
     if (hour_hand && lv_obj_is_valid(hour_hand)) {
-      hour_points[0].x = center_x;
-      hour_points[0].y = center_y;
       hour_points[1].x =
           center_x + (lv_coord_t)(hour_length * cos(hour_angle * M_PI / 180));
       hour_points[1].y =
           center_y + (lv_coord_t)(hour_length * sin(hour_angle * M_PI / 180));
-      // Re-set the points to trigger LVGL's internal update
       lv_line_set_points(hour_hand, hour_points, 2);
     }
     if (minute_hand && lv_obj_is_valid(minute_hand)) {
-      minute_points[0].x = center_x;
-      minute_points[0].y = center_y;
       minute_points[1].x =
           center_x +
           (lv_coord_t)(minute_length * cos(minute_angle * M_PI / 180));
       minute_points[1].y =
           center_y +
           (lv_coord_t)(minute_length * sin(minute_angle * M_PI / 180));
-      // Re-set the points to trigger LVGL's internal update
       lv_line_set_points(minute_hand, minute_points, 2);
     }
     if (second_hand && lv_obj_is_valid(second_hand)) {
-      second_points[0].x = center_x;
-      second_points[0].y = center_y;
       second_points[1].x =
           center_x +
           (lv_coord_t)(second_length * cos(second_angle * M_PI / 180));
       second_points[1].y =
           center_y +
           (lv_coord_t)(second_length * sin(second_angle * M_PI / 180));
-      // Re-set the points to trigger LVGL's internal update
       lv_line_set_points(second_hand, second_points, 2);
     }
     if (date_label && lv_obj_is_valid(date_label)) {
@@ -227,7 +221,7 @@ static void get_display_metrics(lv_coord_t *width, lv_coord_t *height,
                                 bool *is_small) {
   *width = lv_obj_get_width(clock_container);
   *height = lv_obj_get_height(clock_container);
-  *is_small = (*width < 240 || *height < 180); // CardKB is around 240x135
+  *is_small = (*width < 240 || *height < 180);
 }
 
 static void create_wifi_prompt() {
@@ -250,13 +244,12 @@ static void create_wifi_prompt() {
   lv_obj_set_style_pad_all(card, is_small ? 12 : 20, 0);
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
-  // WiFi icon (using symbols)
+  // WiFi icon
   lv_obj_t *icon = lv_label_create(card);
   lv_label_set_text(icon, LV_SYMBOL_WIFI);
   lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 0);
-  lv_obj_set_style_text_font(icon, lv_font_get_default(),
-                             0); // Use default font
-  lv_obj_set_style_text_color(icon, lv_color_hex(0xFF9500), 0); // Orange color
+  lv_obj_set_style_text_font(icon, lv_font_get_default(), 0);
+  lv_obj_set_style_text_color(icon, lv_color_hex(0xFF9500), 0);
 
   // Title
   wifi_label = lv_label_create(card);
@@ -280,8 +273,7 @@ static void create_wifi_prompt() {
   lv_obj_align_to(wifi_button, subtitle, LV_ALIGN_OUT_BOTTOM_MID, 0,
                   is_small ? 12 : 16);
   lv_obj_set_style_radius(wifi_button, is_small ? 6 : 8, 0);
-  lv_obj_set_style_bg_color(wifi_button, lv_color_hex(0x007BFF),
-                            0); // Blue color
+  lv_obj_set_style_bg_color(wifi_button, lv_color_hex(0x007BFF), 0);
 
   lv_obj_t *btn_label = lv_label_create(wifi_button);
   lv_label_set_text(btn_label, "Connect to Wi-Fi");
@@ -298,7 +290,7 @@ static void create_analog_clock() {
   bool is_small;
   get_display_metrics(&width, &height, &is_small);
 
-  // Calculate optimal clock size (leave margins)
+  // Calculate optimal clock size
   lv_coord_t max_size = LV_MIN(width * 0.85, height * 0.75);
   lv_coord_t clock_size = LV_MAX(max_size, is_small ? 120 : 200);
 
@@ -310,16 +302,15 @@ static void create_analog_clock() {
   lv_obj_set_style_bg_color(clock_face, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_bg_opa(clock_face, LV_OPA_10, 0);
   lv_obj_set_style_border_width(clock_face, is_small ? 2 : 3, 0);
-  lv_obj_set_style_border_color(clock_face, lv_palette_main(LV_PALETTE_GREY),
-                                0);
+  lv_obj_set_style_border_color(clock_face, lv_palette_main(LV_PALETTE_GREY), 0);
   lv_obj_set_style_border_opa(clock_face, LV_OPA_50, 0);
-  lv_obj_set_style_pad_all(clock_face, 0,
-                           0); // Remove padding for accurate centering
-  lv_obj_clear_flag(clock_face, LV_OBJ_FLAG_SCROLLABLE); // Prevent scrolling
+  lv_obj_set_style_pad_all(clock_face, 0, 0);
+  lv_obj_clear_flag(clock_face, LV_OBJ_FLAG_SCROLLABLE);
 
-  // Add hour markers using lv_line for proper alignment
   lv_coord_t center_x = clock_size / 2;
   lv_coord_t center_y = clock_size / 2;
+
+  // Add hour markers
   for (int i = 0; i < 12; i++) {
     float angle = i * 30.0f * M_PI / 180.0f;
     lv_coord_t marker_length =
@@ -344,39 +335,42 @@ static void create_analog_clock() {
     lv_obj_set_style_line_rounded(marker, true, 0);
   }
 
-  // Create clock hands using lv_line
+  // Calculate hand lengths
   lv_coord_t hour_length = clock_size * 0.25;
   lv_coord_t minute_length = clock_size * 0.35;
   lv_coord_t second_length = clock_size * 0.4;
 
+  // Initialize hour hand pointing up (12 o'clock position)
   hour_points[0].x = center_x;
   hour_points[0].y = center_y;
   hour_points[1].x = center_x;
   hour_points[1].y = center_y - hour_length;
   hour_hand = lv_line_create(clock_face);
-  lv_line_set_points_mutable(hour_hand, hour_points, 2);
+  lv_line_set_points(hour_hand, hour_points, 2);
   lv_obj_set_style_line_width(hour_hand, is_small ? 4 : 6, 0);
   lv_obj_set_style_line_color(hour_hand, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_line_opa(hour_hand, LV_OPA_COVER, 0);
   lv_obj_set_style_line_rounded(hour_hand, true, 0);
 
+  // Initialize minute hand pointing up
   minute_points[0].x = center_x;
   minute_points[0].y = center_y;
   minute_points[1].x = center_x;
   minute_points[1].y = center_y - minute_length;
   minute_hand = lv_line_create(clock_face);
-  lv_line_set_points_mutable(minute_hand, minute_points, 2);
+  lv_line_set_points(minute_hand, minute_points, 2);
   lv_obj_set_style_line_width(minute_hand, is_small ? 3 : 4, 0);
   lv_obj_set_style_line_color(minute_hand, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_line_opa(minute_hand, LV_OPA_COVER, 0);
   lv_obj_set_style_line_rounded(minute_hand, true, 0);
 
+  // Initialize second hand pointing up
   second_points[0].x = center_x;
   second_points[0].y = center_y;
   second_points[1].x = center_x;
   second_points[1].y = center_y - second_length;
   second_hand = lv_line_create(clock_face);
-  lv_line_set_points_mutable(second_hand, second_points, 2);
+  lv_line_set_points(second_hand, second_points, 2);
   lv_obj_set_style_line_width(second_hand, 2, 0);
   lv_obj_set_style_line_color(second_hand, lv_color_hex(0xFF0000), 0);
   lv_obj_set_style_line_opa(second_hand, LV_OPA_COVER, 0);
@@ -390,17 +384,14 @@ static void create_analog_clock() {
   lv_obj_set_style_bg_color(center, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_border_width(center, 0, 0);
 
-  // Date label - position below center to avoid hand overlap
+  // Date label
   date_label = lv_label_create(clock_face);
   lv_obj_align(date_label, LV_ALIGN_BOTTOM_MID, 0, -15);
   lv_obj_set_style_text_font(date_label, lv_font_get_default(), 0);
   lv_obj_set_style_text_color(date_label, lv_color_hex(0xAAAAAA), 0);
 
-  // Initialize hand positions with current time
+  // Now update hands to actual time
   update_time_display();
-
-  // Force a redraw to ensure hands are visible immediately
-  lv_obj_invalidate(clock_face);
 }
 
 static void create_digital_clock() {
@@ -413,16 +404,9 @@ static void create_digital_clock() {
   lv_obj_align(time_label, LV_ALIGN_CENTER, 0, is_small ? -25 : -35);
   lv_obj_set_style_text_align(time_label, LV_TEXT_ALIGN_CENTER, 0);
 
-  // Use larger fonts for better visibility
-  const lv_font_t *time_font;
-  if (is_small) {
-    time_font = lv_font_get_default();
-  } else {
-    time_font = lv_font_get_default();
-  }
+  const lv_font_t *time_font = lv_font_get_default();
   lv_obj_set_style_text_font(time_label, time_font, 0);
 
-  // Enhanced styling with borders and better contrast
   lv_obj_set_style_text_color(time_label, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_bg_color(time_label, lv_color_hex(0x000000), 0);
   lv_obj_set_style_bg_opa(time_label, LV_OPA_30, 0);
@@ -437,8 +421,7 @@ static void create_digital_clock() {
   lv_obj_align_to(date_label, time_label, LV_ALIGN_OUT_BOTTOM_MID, 0,
                   is_small ? 12 : 16);
   lv_obj_set_style_text_align(date_label, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_set_style_text_font(
-      date_label, is_small ? lv_font_get_default() : lv_font_get_default(), 0);
+  lv_obj_set_style_text_font(date_label, lv_font_get_default(), 0);
   lv_obj_set_style_text_color(date_label, lv_color_hex(0xaaaaaa), 0);
   lv_obj_set_style_pad_all(date_label, is_small ? 8 : 10, 0);
 
@@ -460,12 +443,6 @@ static void create_digital_clock() {
 }
 
 static void redraw_clock() {
-  // Lock LVGL mutex to protect UI operations
-  if (!tt_lock_acquire(lvgl_mutex, pdMS_TO_TICKS(100))) {
-    ESP_LOGE("Clock", "LVGL lock failed in redraw_clock");
-    return;
-  }
-
   // Clear the clock container
   lv_obj_clean(clock_container);
   time_label = nullptr;
@@ -485,39 +462,21 @@ static void redraw_clock() {
     create_digital_clock();
   }
 
-  // Force complete redraw
+  // Force invalidation
   lv_obj_invalidate(clock_container);
-  lv_obj_t *parent = lv_obj_get_parent(clock_container);
-  if (parent) {
-    lv_obj_invalidate(parent);
-  }
-  // Mark all children as needing redraw
-  if (is_analog && clock_face) {
-    lv_obj_invalidate(clock_face);
-    if (hour_hand)
-      lv_obj_invalidate(hour_hand);
-    if (minute_hand)
-      lv_obj_invalidate(minute_hand);
-    if (second_hand)
-      lv_obj_invalidate(second_hand);
-  } else if (!is_analog && time_label) {
-    lv_obj_invalidate(time_label);
-  }
-
-  tt_lock_release(lvgl_mutex);
 }
 
 // C callback functions
 extern "C" void onShow(void *app, void *data, lv_obj_t *parent) {
   app_handle = app;
 
-  // Create toolbar aligned to top
+  // Create toolbar
   toolbar = tt_lvgl_toolbar_create_for_app(parent, app_handle);
   lv_obj_align(toolbar, LV_ALIGN_TOP_LEFT, 0, 0);
 
-  // Create toggle button with better styling and responsive sizing
+  // Create toggle button
   toggle_btn = lv_btn_create(toolbar);
-  lv_obj_set_height(toggle_btn, LV_PCT(80)); // Use percentage for better scaling
+  lv_obj_set_height(toggle_btn, LV_PCT(80));
   lv_obj_set_style_radius(toggle_btn, 6, 0);
   lv_obj_set_style_bg_color(toggle_btn, lv_color_hex(0x007BFF), 0);
   lv_obj_set_style_bg_opa(toggle_btn, LV_OPA_80, 0);
@@ -526,70 +485,71 @@ extern "C" void onShow(void *app, void *data, lv_obj_t *parent) {
   lv_label_set_text(toggle_label, LV_SYMBOL_REFRESH " Mode");
   lv_obj_center(toggle_label);
 
-  // Position with better responsive alignment
   lv_obj_align(toggle_btn, LV_ALIGN_RIGHT_MID, -8, 0);
   lv_obj_add_event_cb(toggle_btn, toggle_mode_cb, LV_EVENT_CLICKED, app_handle);
 
-  // Load settings and initialize
+  // Load settings
   load_mode();
-
   last_sync_status = is_time_synced();
+  needs_redraw = false;
 
   // Initialize LVGL mutex
   lvgl_mutex = tt_lock_alloc_mutex(MutexTypeRecursive);
   
-  // Get UI scale to determine toolbar height
+  // Get UI scale and calculate layout
   UiScale uiScale = tt_hal_configuration_get_ui_scale();
   int toolbar_height = getToolbarHeight(uiScale);
   
-  // Create flex container that fills remaining space below toolbar
+  // Create clock container
   clock_container = lv_obj_create(parent);
   
-  // Get parent dimensions
   lv_coord_t parent_width = lv_obj_get_width(parent);
   lv_coord_t parent_height = lv_obj_get_height(parent);
-  
-  // Calculate container size: full width, and height minus toolbar
   lv_coord_t container_height = parent_height - toolbar_height;
   
   lv_obj_set_size(clock_container, parent_width, container_height);
   lv_obj_align_to(clock_container, toolbar, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
   lv_obj_set_style_border_width(clock_container, 0, 0);
   lv_obj_set_style_pad_all(clock_container, 10, 0);
-  
-  // Disable scrolling on the container itself
   lv_obj_clear_flag(clock_container, LV_OBJ_FLAG_SCROLLABLE);
   
-  // Set up flex layout
   lv_obj_set_layout(clock_container, LV_LAYOUT_FLEX);
   lv_obj_set_flex_flow(clock_container, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(clock_container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
   redraw_clock();
 
-  // Start timer - this will handle both sync checking and time updates
-  timer_handle =
-      (TimerHandle_t)tt_timer_alloc(TimerTypePeriodic, timer_callback, nullptr);
-  tt_timer_start(timer_handle, 1000);
-  ESP_LOGI("Clock", "Timer started in onShow");
+  // Start LVGL timer for UI updates (runs in LVGL context)
+  update_timer = lv_timer_create(update_timer_cb, 1000, nullptr);
+  
+  // Start FreeRTOS timer for sync checking (lightweight, runs every 5 seconds)
+  sync_check_timer = (TimerHandle_t)tt_timer_alloc(TimerTypePeriodic, sync_check_callback, nullptr);
+  tt_timer_start(sync_check_timer, 5000);
+  
+  ESP_LOGI("Clock", "Timers started in onShow");
 }
 
 extern "C" void onHide(void *app, void *data) {
-  // Stop timer first to prevent any callbacks during cleanup
-  if (timer_handle) {
-    tt_timer_stop(timer_handle);
-    tt_timer_free(timer_handle);
-    timer_handle = nullptr;
-    ESP_LOGI("Clock", "Timer stopped in onHide");
+  // Stop timers first
+  if (update_timer) {
+    lv_timer_del(update_timer);
+    update_timer = nullptr;
+  }
+  
+  if (sync_check_timer) {
+    tt_timer_stop(sync_check_timer);
+    tt_timer_free(sync_check_timer);
+    sync_check_timer = nullptr;
+    ESP_LOGI("Clock", "Timers stopped in onHide");
   }
 
-  // Clean up LVGL mutex
+  // Clean up mutex
   if (lvgl_mutex) {
     tt_lock_free(lvgl_mutex);
     lvgl_mutex = nullptr;
   }
 
-  // Clear object pointers to prevent stale access
+  // Clear object pointers
   time_label = nullptr;
   clock_face = hour_hand = minute_hand = second_hand = nullptr;
   wifi_label = nullptr;
